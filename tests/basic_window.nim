@@ -100,7 +100,7 @@ proc main =
     beginDrawing()
     clearBackground(RayWhite)
     drawFPS(5, 5)
-    drawText("Congrats! You created your first window!", 190, 200, 20, LightGray)
+    drawText("Congrats! You created your first window!", 190, 200, 20, DarkGray)
     # removing the type annotation below makes it a closure, not a nimcall, which is not accepted by nim compiler
     logo.map((t: Texture) => drawTexture(t, 660, 310, White))
     endDrawing()
