@@ -949,7 +949,7 @@ proc endVrStereoMode*() {.importc: "EndVrStereoMode", sideEffect.}
   ## End stereo rendering (requires VR simulator)
 proc loadVrStereoConfig*(device: VrDeviceInfo): VrStereoConfig {.importc: "LoadVrStereoConfig", sideEffect.}
   ## Load VR stereo config for VR simulator device parameters
-proc unloadVrStereoConfig(config: VrStereoConfig) {.importc: "UnloadVrStereoConfig", sideEffect.}
+proc unloadVrStereoConfig*(config: VrStereoConfig) {.importc: "UnloadVrStereoConfig", sideEffect.}
 proc loadShaderImpl(vsFileName: cstring, fsFileName: cstring): Shader {.importc: "LoadShader", sideEffect.}
 proc loadShaderFromMemoryImpl(vsCode: cstring, fsCode: cstring): Shader {.importc: "LoadShaderFromMemory", sideEffect.}
 func isShaderValid*(shader: Shader): bool {.importc: "IsShaderValid".}
@@ -1001,7 +1001,7 @@ proc traceLog*(logLevel: TraceLogLevel, text: cstring) {.importc: "TraceLog", va
 proc setTraceLogLevel*(logLevel: TraceLogLevel) {.importc: "SetTraceLogLevel", sideEffect.}
   ## Set the current threshold (minimum) log level
 proc memAlloc(size: uint32): pointer {.importc: "MemAlloc", sideEffect.}
-proc memRealloc(`ptr`: pointer, size: uint32): pointer {.importc: "MemRealloc", sideEffect.}
+proc memRealloc*(`ptr`: pointer, size: uint32): pointer {.importc: "MemRealloc", sideEffect.}
 proc memFree(`ptr`: pointer) {.importc: "MemFree", sideEffect.}
 proc setTraceLogCallbackImpl(callback: TraceLogCallbackImpl) {.importc: "SetTraceLogCallback", sideEffect.}
 proc setLoadFileDataCallback*(callback: LoadFileDataCallback) {.importc: "SetLoadFileDataCallback", sideEffect.}
@@ -1847,8 +1847,12 @@ type
 
 proc `=destroy`*[T](x: RArray[T]) =
   if x.data != nil:
-    for i in 0..<x.len: `=destroy`(x.data[i])
-    memFree(x.data)
+    try:
+      for i in 0..<x.len: `=destroy`(x.data[i])
+      memFree(x.data)
+    except: 
+      echo "Exception during RArray destroy"
+
 proc `=wasMoved`*[T](x: var RArray[T]) =
   x.data = nil
 proc `=dup`*[T](source: RArray[T]): RArray[T] {.nodestroy.} =
