@@ -22,8 +22,12 @@
 #
 # ****************************************************************************************
 
-import raylib, rlgl, raymath, rmem, reasings, rcamera
-
+import raylib, raymath
+#import rmem, reasings
+import rcamera
+import std/os
+import std/options
+import sugar
 # ----------------------------------------------------------------------------------------
 # Global Variables Definition
 # ----------------------------------------------------------------------------------------
@@ -44,11 +48,14 @@ proc testDrawRectangle() =
   let color = Red
   drawRectangle(rec, color)
 
-proc testLoadImage() =
+proc testLoadImage(assetsFolder: string) : Option[Texture] =
   try:
-    let image = loadImage("test_image.png")
+    var image = loadImage(assetsFolder / "naylib.png")
+    image.imageResize(128, 128)
+    return some(image.loadTextureFromImage())
   except RaylibError:
     echo "Error loading image"
+  return none(Texture)
 
 proc testDrawText() =
   drawText("Hello, World!", 100, 100, 20, Black)
@@ -70,9 +77,15 @@ proc main =
   # --------------------------------------------------------------------------------------
 
   # Run tests
+  var assetsPath = "assets/"
+
+  # first arg is the assets folder .e.g. "assets/"
+  if paramCount() >= 1:
+    assetsPath = paramStr(1)
+
   testShowCursor()
   testDrawRectangle()
-  testLoadImage()
+  let logo = testLoadImage(assetsPath)
   testDrawText()
   testDrawTextWithFont()
 
@@ -86,7 +99,10 @@ proc main =
     # ------------------------------------------------------------------------------------
     beginDrawing()
     clearBackground(RayWhite)
+    drawFPS(5, 5)
     drawText("Congrats! You created your first window!", 190, 200, 20, LightGray)
+    # removing the type annotation below makes it a closure, not a nimcall, which is not accepted by nim compiler
+    logo.map((t: Texture) => drawTexture(t, 660, 310, White))
     endDrawing()
     # ------------------------------------------------------------------------------------
   # De-Initialization
