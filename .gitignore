@@ -14,6 +14,7 @@ nimbledeps/
 
 .env
 .venv
+.vscode/
 
 # Raylib source
 raylib/
@@ -26,3 +27,6 @@ tools/wrapper/naylib_wrapper
 # Configuration
 nim.cfg
 
+# Tests binaries
+tests/basic_window
+tests/basic_window.exe
