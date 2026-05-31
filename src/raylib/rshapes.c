@@ -25,7 +25,7 @@
 *
 *   LICENSE: zlib/libpng
 *
-*   Copyright (c) 2013-2025 Ramon Santamaria (@raysan5)
+*   Copyright (c) 2013-2026 Ramon Santamaria (@raysan5)
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
 *   will the authors be held liable for any damages arising from the use of this software.
@@ -46,10 +46,7 @@
 
 #include "raylib.h"     // Declares module functions
 
-// Check if config flags have been externally provided on compilation line
-#if !defined(EXTERNAL_CONFIG_FLAGS)
-    #include "config.h"         // Defines module configuration flags
-#endif
+#include "config.h"     // Defines module configuration flags
 
 #if defined(SUPPORT_MODULE_RSHAPES)
 
@@ -62,9 +59,9 @@
 //----------------------------------------------------------------------------------
 // Defines and Macros
 //----------------------------------------------------------------------------------
-// Error rate to calculate how many segments we need to draw a smooth circle,
-// taken from https://stackoverflow.com/a/2244088
 #ifndef SMOOTH_CIRCLE_ERROR_RATE
+    // Define error rate to calculate how many segments are needed to draw a smooth circle
+    // REF: https://stackoverflow.com/a/2244088
     #define SMOOTH_CIRCLE_ERROR_RATE    0.5f      // Circle error rate
 #endif
 #ifndef SPLINE_SEGMENT_DIVISIONS
@@ -182,6 +179,28 @@ void DrawLine(int startPosX, int startPosY, int endPosX, int endPosY, Color colo
     rlEnd();
 }
 
+// Draw a line defining thickness
+void DrawLineEx(Vector2 startPos, Vector2 endPos, float thick, Color color)
+{
+    Vector2 delta = { endPos.x - startPos.x, endPos.y - startPos.y };
+    float length = sqrtf(delta.x*delta.x + delta.y*delta.y);
+
+    if ((length > 0) && (thick > 0))
+    {
+        float scale = thick/(2*length);
+
+        Vector2 radius = { -scale*delta.y, scale*delta.x };
+        Vector2 strip[4] = {
+            { startPos.x - radius.x, startPos.y - radius.y },
+            { startPos.x + radius.x, startPos.y + radius.y },
+            { endPos.x - radius.x, endPos.y - radius.y },
+            { endPos.x + radius.x, endPos.y + radius.y }
+        };
+
+        DrawTriangleStrip(strip, 4, color);
+    }
+}
+
 // Draw a line (using gl lines)
 void DrawLineV(Vector2 startPos, Vector2 endPos, Color color)
 {
@@ -246,26 +265,50 @@ void DrawLineBezier(Vector2 startPos, Vector2 endPos, float thick, Color color)
     DrawTriangleStrip(points, 2*SPLINE_SEGMENT_DIVISIONS + 2, color);
 }
 
-// Draw a line defining thickness
-void DrawLineEx(Vector2 startPos, Vector2 endPos, float thick, Color color)
+// Draw a dashed line
+void DrawLineDashed(Vector2 startPos, Vector2 endPos, int dashSize, int spaceSize, Color color)
 {
-    Vector2 delta = { endPos.x - startPos.x, endPos.y - startPos.y };
-    float length = sqrtf(delta.x*delta.x + delta.y*delta.y);
+    // Calculate the vector and length of the line
+    float dx = endPos.x - startPos.x;
+    float dy = endPos.y - startPos.y;
+    float lineLength = sqrtf(dx*dx + dy*dy);
 
-    if ((length > 0) && (thick > 0))
+    // If the line is too short for dashing or dash size is invalid, draw a solid thick line
+    if ((lineLength < (dashSize + spaceSize)) || (dashSize <= 0))
     {
-        float scale = thick/(2*length);
-
-        Vector2 radius = { -scale*delta.y, scale*delta.x };
-        Vector2 strip[4] = {
-            { startPos.x - radius.x, startPos.y - radius.y },
-            { startPos.x + radius.x, startPos.y + radius.y },
-            { endPos.x - radius.x, endPos.y - radius.y },
-            { endPos.x + radius.x, endPos.y + radius.y }
-        };
-
-        DrawTriangleStrip(strip, 4, color);
+        DrawLineV(startPos, endPos, color);
+        return;
     }
+
+    // Calculate the normalized direction vector of the line
+    float invLineLength = 1.0f/lineLength;
+    float dirX = dx*invLineLength;
+    float dirY = dy*invLineLength;
+
+    Vector2 currentPos = startPos;
+    float distanceTraveled = 0;
+
+    rlBegin(RL_LINES);
+        rlColor4ub(color.r, color.g, color.b, color.a);
+
+        while (distanceTraveled < lineLength)
+        {
+            // Calculate the end of the current dash
+            float dashEndDist = distanceTraveled + dashSize;
+            if (dashEndDist > lineLength) dashEndDist = lineLength;
+
+            Vector2 dashEndPos = { startPos.x + dashEndDist*dirX, startPos.y + dashEndDist*dirY };
+
+            // Draw the dash segment
+            rlVertex2f(currentPos.x, currentPos.y);
+            rlVertex2f(dashEndPos.x, dashEndPos.y);
+
+            // Update the distance traveled and move the current position for the next dash
+            distanceTraveled = dashEndDist + spaceSize;
+            currentPos.x = startPos.x + distanceTraveled*dirX;
+            currentPos.y = startPos.y + distanceTraveled*dirY;
+        }
+    rlEnd();
 }
 
 // Draw a color-filled circle
@@ -275,7 +318,7 @@ void DrawCircle(int centerX, int centerY, float radius, Color color)
 }
 
 // Draw a color-filled circle (Vector version)
-// NOTE: On OpenGL 3.3 and ES2 we use QUADS to avoid drawing order issues
+// NOTE: On OpenGL 3.3 and ES2 using QUADS to avoid drawing order issues
 void DrawCircleV(Vector2 center, float radius, Color color)
 {
     DrawCircleSector(center, radius, 0, 360, 36, color);
@@ -336,7 +379,7 @@ void DrawCircleSector(Vector2 center, float radius, float startAngle, float endA
             angle += (stepLength*2.0f);
         }
 
-        // NOTE: In case number of segments is odd, we add one last piece to the cake
+        // NOTE: In case number of segments is odd, adding one last piece to the cake
         if ((((unsigned int)segments)%2) == 1)
         {
             rlColor4ub(color.r, color.g, color.b, color.a);
@@ -679,7 +722,7 @@ void DrawRectangle(int posX, int posY, int width, int height, Color color)
 }
 
 // Draw a color-filled rectangle (Vector version)
-// NOTE: On OpenGL 3.3 and ES2 we use QUADS to avoid drawing order issues
+// NOTE: On OpenGL 3.3 and ES2 using QUADS to avoid drawing order issues
 void DrawRectangleV(Vector2 position, Vector2 size, Color color)
 {
     DrawRectanglePro((rlRectangle){ position.x, position.y, size.x, size.y }, (Vector2){ 0.0f, 0.0f }, 0.0f, color);
@@ -925,7 +968,7 @@ void DrawRectangleRounded(rlRectangle rec, float roundness, int segments, Color 
 
     /*
     Quick sketch to make sense of all of this,
-    there are 9 parts to draw, also mark the 12 points we'll use
+    there are 9 parts to draw, also mark the 12 points used
 
           P0____________________P1
           /|                    |\
@@ -981,7 +1024,7 @@ void DrawRectangleRounded(rlRectangle rec, float roundness, int segments, Color 
                 angle += (stepLength*2);
             }
 
-            // NOTE: In case number of segments is odd, we add one last piece to the cake
+            // NOTE: In case number of segments is odd, adding one last piece to the cake
             if (segments%2)
             {
                 rlColor4ub(color.r, color.g, color.b, color.a);
@@ -1123,9 +1166,9 @@ void DrawRectangleRounded(rlRectangle rec, float roundness, int segments, Color 
 }
 
 // Draw rectangle with rounded edges
-// TODO: This function should be refactored to use RL_LINES, for consistency with other Draw*Lines()
 void DrawRectangleRoundedLines(rlRectangle rec, float roundness, int segments, Color color)
 {
+    // NOTE: For line thicknes <=1.0f using RL_LINES, otherwise using RL_QUADS/RL_TRIANGLES
     DrawRectangleRoundedLinesEx(rec, roundness, segments, 1.0f, color);
 }
 
@@ -1161,7 +1204,7 @@ void DrawRectangleRoundedLinesEx(rlRectangle rec, float roundness, int segments,
 
     /*
     Quick sketch to make sense of all of this,
-    marks the 16 + 4(corner centers P16-19) points we'll use
+    marks the 16 + 4(corner centers P16-19) points used
 
            P0 ================== P1
           // P8                P9 \\
@@ -1349,7 +1392,6 @@ void DrawRectangleRoundedLinesEx(rlRectangle rec, float roundness, int segments,
     {
         // Use LINES to draw the outline
         rlBegin(RL_LINES);
-
             // Draw all the 4 corners first: Upper Left Corner, Upper Right Corner, Lower Right Corner, Lower Left Corner
             for (int k = 0; k < 4; ++k) // Hope the compiler is smart enough to unroll this loop
             {
@@ -1372,7 +1414,6 @@ void DrawRectangleRoundedLinesEx(rlRectangle rec, float roundness, int segments,
                 rlVertex2f(point[i].x, point[i].y);
                 rlVertex2f(point[i + 1].x, point[i + 1].y);
             }
-
         rlEnd();
     }
 }
@@ -1386,6 +1427,7 @@ void DrawTriangle(Vector2 v1, Vector2 v2, Vector2 v3, Color color)
     rlRectangle shapeRect = GetShapesTextureRectangle();
 
     rlBegin(RL_QUADS);
+        rlNormal3f(0.0f, 0.0f, 1.0f);
         rlColor4ub(color.r, color.g, color.b, color.a);
 
         rlTexCoord2f(shapeRect.x/texShapes.width, shapeRect.y/texShapes.height);
@@ -1395,7 +1437,7 @@ void DrawTriangle(Vector2 v1, Vector2 v2, Vector2 v3, Color color)
         rlVertex2f(v2.x, v2.y);
 
         rlTexCoord2f((shapeRect.x + shapeRect.width)/texShapes.width, (shapeRect.y + shapeRect.height)/texShapes.height);
-        rlVertex2f(v2.x, v2.y);
+        rlVertex2f(v3.x, v3.y);
 
         rlTexCoord2f((shapeRect.x + shapeRect.width)/texShapes.width, shapeRect.y/texShapes.height);
         rlVertex2f(v3.x, v3.y);
@@ -1904,7 +1946,7 @@ void DrawSplineBezierCubic(const Vector2 *points, int pointCount, float thick, C
 // Draw spline segment: Linear, 2 points
 void DrawSplineSegmentLinear(Vector2 p1, Vector2 p2, float thick, Color color)
 {
-    // NOTE: For the linear spline we don't use subdivisions, just a single quad
+    // NOTE: For the linear spline no subdivisions are used, just a single quad
 
     Vector2 delta = { p2.x - p1.x, p2.y - p1.y };
     float length = sqrtf(delta.x*delta.x + delta.y*delta.y);
@@ -2321,31 +2363,35 @@ bool CheckCollisionCircleRec(Vector2 center, float radius, rlRectangle rec)
 }
 
 // Check the collision between two lines defined by two points each, returns collision point by reference
+// REF: https://en.wikipedia.org/wiki/Line–line_intersection#Given_two_points_on_each_line_segment
 bool CheckCollisionLines(Vector2 startPos1, Vector2 endPos1, Vector2 startPos2, Vector2 endPos2, Vector2 *collisionPoint)
 {
     bool collision = false;
 
-    float div = (endPos2.y - startPos2.y)*(endPos1.x - startPos1.x) - (endPos2.x - startPos2.x)*(endPos1.y - startPos1.y);
+    float rx = endPos1.x - startPos1.x;
+    float ry = endPos1.y - startPos1.y;
+    float sx = endPos2.x - startPos2.x;
+    float sy = endPos2.y - startPos2.y;
+
+    float div = rx*sy - ry*sx;
 
     if (fabsf(div) >= FLT_EPSILON)
     {
-        collision = true;
+        float s12x = startPos2.x - startPos1.x;
+        float s12y = startPos2.y - startPos1.y;
 
-        float xi = ((startPos2.x - endPos2.x)*(startPos1.x*endPos1.y - startPos1.y*endPos1.x) - (startPos1.x - endPos1.x)*(startPos2.x*endPos2.y - startPos2.y*endPos2.x))/div;
-        float yi = ((startPos2.y - endPos2.y)*(startPos1.x*endPos1.y - startPos1.y*endPos1.x) - (startPos1.y - endPos1.y)*(startPos2.x*endPos2.y - startPos2.y*endPos2.x))/div;
+        float t = (s12x*sy - s12y*sx)/div;
+        float u = (s12x*ry - s12y*rx)/div;
 
-        if (((fabsf(startPos1.x - endPos1.x) > FLT_EPSILON) && (xi < fminf(startPos1.x, endPos1.x) || (xi > fmaxf(startPos1.x, endPos1.x)))) ||
-            ((fabsf(startPos2.x - endPos2.x) > FLT_EPSILON) && (xi < fminf(startPos2.x, endPos2.x) || (xi > fmaxf(startPos2.x, endPos2.x)))) ||
-            ((fabsf(startPos1.y - endPos1.y) > FLT_EPSILON) && (yi < fminf(startPos1.y, endPos1.y) || (yi > fmaxf(startPos1.y, endPos1.y)))) ||
-            ((fabsf(startPos2.y - endPos2.y) > FLT_EPSILON) && (yi < fminf(startPos2.y, endPos2.y) || (yi > fmaxf(startPos2.y, endPos2.y))))) collision = false;
-
-        if (collision && (collisionPoint != 0))
+        if ((0.0f <= t) && (t <= 1.0f) && (0.0f <= u) && (u <= 1.0f))
         {
-            collisionPoint->x = xi;
-            collisionPoint->y = yi;
+            collisionPoint->x = startPos1.x + t*rx;
+            collisionPoint->y = startPos1.y + t*ry;
+            
+            collision = true;
         }
     }
-
+    
     return collision;
 }
 

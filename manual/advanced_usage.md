@@ -1,151 +1,101 @@
 # Naylib Advanced Usage Guide
 
-## Changing raylib Settings with Nim Defines
+## Destructor-Based Management
 
-To customize raylib behavior in the Naylib wrapper, you can use Nim's `--define` option to enable or disable specific features. These settings are configured in the project's `config.nims` file.
+Naylib manages Raylib resources—such as `Image`, `Wave`, `Texture`, `Shader`, and `Mesh`—using Nim’s **destructors** (RAII) rather than manual `Unload*` functions.
 
-### Example Usage
+* **No Manual Unloading:** `Unload*` APIs are intentionally not exported to the user.
+* **Automatic Release:** Resources are released automatically when they go out of scope.
+* **Safety:** This approach follows Nim’s memory model to prevent double-free errors and lifetime issues.
 
-To enable a feature, such as `NaylibSupportAutomationEvents`, add the following line to your `config.nims`:
+---
 
-```nim
-switch("define", "NaylibSupportAutomationEvents")
-```
+## Early Resource Release
 
-Alternatively, you can pass it directly via the command line when invoking `nim`:
-
-```bash
-nim c --define:NaylibSupportAutomationEvents my_program.nim
-```
-
-To disable a feature, you can use:
+If a resource must be released before it goes out of scope—for example, to free up RAM after uploading data to the GPU—use the `reset` procedure:
 
 ```nim
-switch("define", "NaylibSupportAutomationEvents=false")
+var image = loadImage("resources/heightmap.png") # Load heightmap image (RAM)
+let texture = loadTextureFromImage(image)        # Convert image to texture (VRAM)
+reset(image)                                     # Explicitly destroy the RAM resource
 ```
 
-### Available Options
+This immediately invokes the destructor. Use this pattern when working with large assets that don't need to persist in system memory.
 
-A full list of configurable options can be found in the `rconfig.nim` file. Refer to it for the supported feature flags and their descriptions: [rconfig.nim](../src/rconfig.nim).
+---
 
-## Building for the Web (WebAssembly)
+## Copying and References
 
-To compile your project for web browsers using WebAssembly:
+To maintain strict control over GPU resources, certain types—including `Texture`, `Shader`, `Mesh`, and `Font`—intentionally do **not** define `=copy` hooks. This prevents accidental duplication of handles.
 
-1. Install the Emscripten SDK. Follow the [official Emscripten installation guide](https://emscripten.org/docs/getting_started/downloads.html).
+If shared access to a resource is required across different parts of your code, use references:
 
-2. Create a configuration file for your project. You can use [this example](../tests/basic_window_web.nims)
-   as a starting point.
+```nim
+var texture: ref Texture
+new(texture)
+texture[] = loadTexture("resources/example.png")
 
-3. Add the `-d:emscripten` flag when compiling, e.g., `nim c -d:emscripten your_project.nim`.
+let copy = texture # Copies the reference, not the resource handle itself
+```
 
-   This will generate the necessary files for web deployment in the `public` directory.
+---
 
-4. To run a local web server, you can use nimhttpd (`nimble install nimhttpd`). Navigate to the
-   directory containing your compiled files and run `nimhttpd`.
+## Model and Mesh Ownership
 
-   For multithreading support (`--threads:on`), you need to pass the following extra arguments to nimhttpd:
+Naylib distinguishes between "viewing" a resource and "owning" it, particularly when dealing with 3D models.
 
-   ```bash
-   nimhttpd -H:"Cross-Origin-Opener-Policy: same-origin" -H:"Cross-Origin-Embedder-Policy: require-corp"
-   ```
+### Texture Ownership in Models
 
-5. Open your web browser and navigate to the address printed by nimhttpd (usually `localhost:1337`).
+Assigning a texture to a model performs only a **shallow copy**. The model stores the handle but does not take ownership.
 
-   You should now be able to see your game running in the browser window!
+> **Note:** The texture must remain valid and in scope for the entire duration of the model’s use.
 
-### Customizing the Web Build
+```nim
+var model = loadModel("resources/models/plane.obj")
+let texture = loadTexture("resources/models/plane_diffuse.png")
 
-When building for web, the following defines are available to customize your build:
+model.materials[0].maps[MaterialMapIndex.Diffuse].texture = texture
+```
 
-- `-d:GraphicsApiOpenGlEs3`: Use WebGL 2.0 instead of WebGL 1.0 (default: WebGL 1.0)
-- `-d:NaylibWebAsyncify`: Enable Asyncify support for blocking operations
-- `-d:NaylibWebResources`: Enable filesystem and resource preloading
-  - `-d:NaylibWebResourcesPath="resources"`: Set the path to preload resources from (default: "resources")
-- `--threads:on`: Enable multithreading support
-  - `-d:NaylibWebPthreadPoolSize=N`: Set the size of the pthread pool (default: 2)
-- `-d:NaylibWebHeapSize=N`: Set the WebAssembly heap size in bytes (default: 134217728 / 128MiB)
+### Mesh Ownership Transfer
 
-## Building for Android
+When creating a model from a mesh via `loadModelFromMesh`, ownership **is** transferred. The `sink Mesh` parameter consumes the mesh. Because meshes cannot be copied, the compiler enforces that the mesh is moved into the model.
 
-Building for Android is streamlined using the [naylib-game-template](https://github.com/planetis-m/naylib-game-template) repository. Follow these steps:
+```nim
+let mesh = genMeshHeightmap(image, Vector3(x: 16, y: 8, z: 16))
+var model = loadModelFromMesh(mesh) # Mesh is now owned by the model
+```
 
-1. Fork the [naylib-game-template](https://github.com/planetis-m/naylib-game-template) repository.
+At this point, the original `mesh` variable should not be used. The model's destructor will eventually unload the mesh.
 
-2. Clone your forked repository and navigate to its directory.
+---
 
-3. Make sure to install Java JDK and wget then, run the following Nimble tasks in order:
+## Window Lifecycle Management
 
-   ```bash
-   nimble setupBuildEnv    # Set up Android SDK and NDK for development
-   nimble setupAndroid     # Prepare raylib project for Android development
-   nimble buildAndroid     # Compile and package raylib project for Android
-   ```
+While most resources are managed automatically, `closeWindow` requires special care. It **must** be called at the very end of the program, after all dependent variables have been destroyed.
 
-4. Install and run the APK on your Android device.
-
-   Enable USB Debugging on your Android device, plug it into your computer, select File Transfer,
-   accept the RSA key and install the package with the following command:
-
-   ```bash
-   nimble deploy           # Install and monitor raylib project on Android device/emulator
-   ```
-
-   Now you should be able to run your raylib game on your Android device!
-
-> **Note:** Instead of the standard Android template, you can use this: [naylib-android-withads-template](https://github.com/choltreppe/naylib-android-withads-template) if you need to add reward ads to your game.
-
-### Customizing the Android Build
-
-The [build_android.nims](https://github.com/planetis-m/naylib-game-template/blob/master/build_android.nims#L31-L65) file in the naylib-game-template repository offers extensive customization options for your Android build:
-
-- Define target Android architectures (armeabi-v7a, arm64-v8a, x86, x86-64)
-- Set GLES and Android API versions
-- Specify locations of OpenJDK, Android SDK, and NDK on your system
-- Configure application properties such as name and icon
-- Adjust other build settings to match your project requirements
-
-Review and modify this file to tailor the build process to your specific needs.
-
-## Choosing the OpenGL Graphics Backend Version
-
-By default, Naylib uses OpenGL 3.3 on desktop platforms. To choose a different version, use one of the following flags when compiling:
-
-- `-d:GraphicsApiOpenGl43` (OpenGL 4.3)
-- `-d:GraphicsApiOpenGl33` (OpenGL 3.3 - default)
-- `-d:GraphicsApiOpenGl21` (OpenGL 2.1)
-- `-d:GraphicsApiOpenGl11` (OpenGL 1.1)
-- `-d:GraphicsApiOpenGlEs2` (OpenGL ES 2.0)
-- `-d:GraphicsApiOpenGlEs3` (OpenGL ES 3.0)
-
-Note: For Wayland on Linux, add the `-d:wayland` flag.
-
-## Important Usage Tips
-
-### Properly Calling closeWindow
-
-Since Naylib wraps most types with Nim's destructors, `closeWindow` needs special attention. It should be called at the very end of your program to avoid conflicts with variables destroyed after the last statement. Here are three recommended methods:
-
-1. Using `defer` or `try-finally`:
+### Recommended Pattern: `defer`
 
 ```nim
 initWindow(800, 450, "example")
 defer: closeWindow()
+
 let texture = loadTexture("resources/example.png")
-# Game logic goes here
+# Game logic...
 ```
 
-2. Wrapping everything inside a game object:
+### Advanced Pattern: The Owning Object
+
+For larger applications, you can wrap the window lifetime in an object. This ensures the window is the last resource cleaned up by the program.
 
 ```nim
-type
-  Game = object
+type Game = object
 
 proc `=destroy`(x: Game) =
   assert isWindowReady(), "Window is already closed"
   closeWindow()
 
-# Prevent copying, moving, etc.
+# Explicitly disable copying and moving for the Game object
 proc `=sink`(x: var Game; y: Game) {.error.}
 proc `=dup`(y: Game): Game {.error.}
 proc `=copy`(x: var Game; y: Game) {.error.}
@@ -158,84 +108,44 @@ proc initGame(width, height, fps: int32, flags: Flags[ConfigFlags], title: strin
   setTargetFPS(fps)
 
 let game = initGame(800, 450, 60, flags(Msaa4xHint, WindowHighdpi), "example")
-let texture = loadTexture("resources/example.png")
-# Game logic goes here
 ```
 
-3. Opening a new scope:
+---
+
+## Embedded Resources and Pixel Formats
+
+When working with data embedded directly in the binary (via `exportImageAsCode`), use "weak" views to avoid unnecessary memory overhead.
+
+### Weak Views
+
+`toWeakImage` and `toWeakWave` create non-owning references to static data.
 
 ```nim
-initWindow(800, 450, "example")
-block:
-  let texture = loadTexture("resources/example.png")
-  # Game logic goes here
-closeWindow()
+# ImageData is a static array embedded in the binary
+let image = toWeakImage(ImageData, ImageWidth, ImageHeight, ImageFormat)
+let texture = loadTextureFromImage(Image(image)) 
 ```
 
-4. Using templates:
+### Custom Pixel Formats
 
-```nim
-const
-  screenWidth = 800
-  screenHeight = 450
-  windowName = "example"
-  targetFramerate = 60
-  flags = flags(Msaa4xHint)
-
-template game(gameCode: untyped) =
-  proc main =
-    setConfigFlags(flags)
-    initWindow(screenWidth, screenHeight, windowName)
-    try:
-      gameCode
-    finally:
-      closeWindow()
-  main()
-
-template gameLoop(loopCode: untyped) =
-  setTargetFPS(targetFramerate)
-  while not windowShouldClose():
-    loopCode
-
-game:
-  # Setup code goes here.
-  let texture = loadTexture("resources/example.png")
-  gameLoop:
-    drawing:
-      clearBackground(RayWhite)
-```
-
-### Handling types without =copy hooks
-
-Some types in naylib, like `Texture`, don't have `=copy` hooks. This prevents direct copying:
-
-```nim
-let texture = loadTexture("resources/example.png")
-let copy = texture  # Error: '=copy' is not available for type <Texture>
-```
-
-To work around this, use references:
-
-```nim
-var texture: ref Texture
-new(texture)
-texture[] = loadTexture("resources/example.png")
-let copy = texture  # This works, copying the reference
-```
-
-Remember that `texture` and `copy` will point to the same object.
-
-### Additional Tips
-
-- **Custom Pixel Formats**: To make your external type compatible with the `Pixel` concept, define a `pixelKind` template that returns the corresponding pixel format.
+You can define custom mappings for external data sources using `pixelKind`. Naylib will automatically infer the format and validate buffer sizes.
 
 ```nim
 type RGBAPixel* = distinct byte
 
-template pixelKind*(x: typedesc[RGBAPixel]): PixelFormat = UncompressedR8g8b8a8
+template pixelKind*(x: typedesc[RGBAPixel]): PixelFormat =
+  UncompressedR8g8b8a8
+
+let rgba = loadExternalRGBA8(width, height)
+let tex = loadTextureFromData(rgba, width, height)
+updateTexture(tex, rgba)
 ```
 
-- **Swapping Raymath**: Raylib is designed to be independent of `raymath`. You can use alternative vector math libraries like `vmath`, `geometrymath`, or `glm`. Remember to implement converters for `Vector2`, `Vector3`, `Vector4`, and `Matrix` if you switch libraries.
+---
+
+## Math Library Integration
+
+Naylib is designed to be math-agnostic. If you use external libraries like `vmath` or `glm`, you can bridge them using converters.
 
 ```nim
 converter toVector2*(v: geometrymath.Vector2[float32]): raylib.Vector2 {.inline.} =
@@ -244,3 +154,4 @@ converter toVector2*(v: geometrymath.Vector2[float32]): raylib.Vector2 {.inline.
 converter fromVector2*(v: raylib.Vector2): geometrymath.Vector2[float32] {.inline.} =
   geometrymath.Vector2[float32](x: v.x, y: v.y)
 ```
+

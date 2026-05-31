@@ -82,11 +82,6 @@ const NaylibSupportScreenCapture {.booldefine.} = true
 when NaylibSupportScreenCapture:
   {.passC: "-DSUPPORT_SCREEN_CAPTURE=1".}
 
-# GIF recording support
-const NaylibSupportGifRecording {.booldefine.} = true
-when NaylibSupportGifRecording:
-  {.passC: "-DSUPPORT_GIF_RECORDING=1".}
-
 # Compression API support
 const NaylibSupportCompressionApi {.booldefine.} = true
 when NaylibSupportCompressionApi:
@@ -237,6 +232,10 @@ const NaylibSupportFontAtlasWhiteRec {.booldefine.} = true
 when NaylibSupportFontAtlasWhiteRec:
   {.passC: "-DSUPPORT_FONT_ATLAS_WHITE_REC=1".}
 
+const NaylibSupportAtlasSizeConservative {.booldefine.} = false
+when NaylibSupportAtlasSizeConservative:
+  {.passC: "-DSUPPORT_FONT_ATLAS_SIZE_CONSERVATIVE=1".}
+
 # ----------------------------------------------------------------------------------------
 # Module: rmodels - Configuration Flags
 # ----------------------------------------------------------------------------------------
@@ -316,3 +315,4 @@ when NaylibSupportTracelog:
 const NaylibSupportTracelogDebug {.booldefine.} = false
 when NaylibSupportTracelogDebug:
   {.passC: "-DSUPPORT_TRACELOG_DEBUG=1".}
+

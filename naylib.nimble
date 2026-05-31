@@ -1,6 +1,6 @@
 # Package
 
-version     = "25.37.0"
+version     = "26.08.0"
 author      = "Antonis Geralis"
 description = "Raylib Nim wrapper"
 license     = "MIT"
@@ -9,8 +9,6 @@ srcDir      = "src"
 # Deps
 
 requires "nim >= 2.0.0"
-feature "dev":
-  requires "eminim == 2.8.2"
 
 # https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux
 import std/distros
