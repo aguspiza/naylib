@@ -1456,6 +1456,8 @@ func isFontValid*(font: Font): bool {.importc: "IsFontValid".}
 proc loadFontDataImpl(fileData: ptr UncheckedArray[uint8], dataSize: int32, fontSize: int32, codepoints: ptr UncheckedArray[int32], codepointCount: int32, `type`: FontType, glyphCount: ptr int32): ptr UncheckedArray[GlyphInfo] {.importc: "LoadFontData", sideEffect.}
 func genImageFontAtlasImpl(glyphs: ptr UncheckedArray[GlyphInfo], glyphRecs: ptr ptr UncheckedArray[Rectangle], glyphCount: int32, fontSize: int32, padding: int32, packMethod: int32): Image {.importc: "GenImageFontAtlas".}
 proc unloadFont(font: Font) {.importc: "UnloadFont", sideEffect.}
+proc unloadFontData*(glyphs: ptr UncheckedArray[GlyphInfo]; glyphCount: int32) {.importc: "UnloadFontData", sideEffect.}
+  ## Unload font glyph info data from RAM
 proc exportFontAsCodeImpl(font: Font, fileName: cstring): bool {.importc: "ExportFontAsCode", sideEffect.}
 proc drawFPS*(posX: int32, posY: int32) {.importc: "DrawFPS", sideEffect.}
   ## Draw current FPS
@@ -1774,18 +1776,26 @@ proc `=copy`*(dest: var Image; source: Image) =
   if dest.data != source.data:
     dest = imageCopy(source) # generates =sink
 
+proc c_free(p: pointer) {.importc: "free", header: "<stdlib.h>".}
+
 proc `=destroy`*(x: Texture) =
-  unloadTexture(x)
+  # Texture is GPU-only; driver frees it when context is destroyed.
+  if isWindowReady() and isTextureValid(x): unloadTexture(x)
 proc `=dup`*(source: Texture): Texture {.error.}
 proc `=copy`*(dest: var Texture; source: Texture) {.error.}
 
 proc `=destroy`*(x: RenderTexture) =
-  unloadRenderTexture(x)
+  # RenderTexture is GPU-only; driver frees it when context is destroyed.
+  if isWindowReady() and isRenderTextureValid(x): unloadRenderTexture(x)
 proc `=dup`*(source: RenderTexture): RenderTexture {.error.}
 proc `=copy`*(dest: var RenderTexture; source: RenderTexture) {.error.}
 
 proc `=destroy`*(x: Font) =
-  unloadFont(x)
+  if isWindowReady() and isFontValid(x):
+    unloadFont(x)
+  else:
+    unloadFontData(x.glyphs, x.glyphCount)  # CPU glyphs (free(nil) is a no-op)
+    c_free(x.recs)                           # CPU recs
 proc `=dup`*(source: Font): Font {.error.}
 proc `=copy`*(dest: var Font; source: Font) {.error.}
 
